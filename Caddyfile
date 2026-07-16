@@ -1,0 +1,75 @@
+# Caddyfile — TLS front for the Nextcloud appliance. The ONLY internet-facing service.
+#
+# ONE hostname serves both Nextcloud and the office. We get exactly one DNS record per VM
+# (vps-<o3>-<o4>.cloudhosting.lv, created by convention), and cloudhosting.lv has no
+# wildcard, so a second name like office.<host> is not available without hand-adding a
+# record per machine. Collabora supports this properly: coolwsd's net.service_root shifts
+# every Collabora URL under a sub-path, strips the prefix off inbound requests itself and
+# injects it into the discovery document and the served assets.
+#
+# TRADE-OFF, stated plainly: Collabora's and Nextcloud's docs both recommend a SEPARATE
+# subdomain "for security reason", the point being origin isolation between the editor and
+# the app it edits. This is a single-tenant VM belonging to one customer: same-origin means
+# the editor shares an origin with that customer's own Nextcloud, and nobody else's. If a
+# second DNS name per VM ever becomes cheap, splitting them is the stricter setup.
+#
+# Caddy gets a real Let's Encrypt cert over HTTP-01 on :80 and renews it on its own; the
+# account and certs live in the caddy_data volume, so a container restart does not re-issue.
+#
+# NC_DOMAIN is injected by compose. firstboot.sh derives it from the primary IPv4 if blank.
+
+{
+	email admin@cloudhosting.lv
+	# While testing, uncomment to avoid burning the LE rate limit on a VM you rebuild often:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$NC_DOMAIN} {
+	encode zstd gzip
+
+	# --- Collabora Online, under /office ------------------------------------------------
+	# `handle`, NOT `handle_path`: coolwsd is configured with net.service_root=/office and
+	# strips the prefix itself. Stripping it here too would leave it looking for /browser
+	# under a root it does not serve, and the editor would 404 with no useful error.
+	handle /office/* {
+		reverse_proxy collabora:9980
+	}
+
+	# --- Nextcloud ----------------------------------------------------------------------
+	handle {
+		# Nextcloud's own well-known routes. Without these the admin overview shows a
+		# permanent "Your web server is not properly set up to resolve /.well-known/..."
+		# warning and CalDAV/CardDAV auto-discovery fails on Apple + Thunderbird clients.
+		redir /.well-known/carddav /remote.php/dav 301
+		redir /.well-known/caldav  /remote.php/dav 301
+
+		reverse_proxy app:80 {
+			transport http {
+				dial_timeout 10s
+				# Big uploads and long occ-driven requests: do not cut them off at the default.
+				response_header_timeout 300s
+			}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	# NOTE: no X-Frame-Options DENY here on purpose. Nextcloud embeds the Collabora editor
+	# in an iframe from this same origin; DENY would blank the editor. Nextcloud sets its
+	# own frame-ancestors CSP per route, which is the correct control here.
+
+	# 0 = unlimited. Nextcloud is a FILE server: a body cap here would silently break
+	# uploads larger than it, and the client error would point nowhere near this file.
+	request_body {
+		max_size 0
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

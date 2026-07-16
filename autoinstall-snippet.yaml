@@ -1,0 +1,24 @@
+# What the Ubuntu autoinstall runs to lay this appliance down. NOT used by docker compose;
+# this is the reference copy of the block that lives in the legacy installer at
+# my.cloudhosting.lv/core/services.php, in the branch:
+#
+#     if($servicevar['panel_system_name']=='nextcloud') { $autoinstall='...'; }
+#
+# It is substituted into nocloud/user-data at {panelinstall}, inside late-commands, so every
+# line here is a curtin in-target step running in the freshly installed system.
+#
+# Keep this file and services.php in step. It is here so the appliance is readable on its
+# own: services.php is on a host most people cannot reach, and a repo that cannot explain
+# how it gets installed is a repo nobody can fix.
+
+    - ["curtin","in-target","--","bash","-c","apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git docker.io docker-compose-v2 ca-certificates"]
+    # 2. забрать appliance из git
+    - ["curtin","in-target","--","bash","-c","test -d /opt/nextcloud-vm || git clone --depth 1 https://github.com/cloudhostinglv/nextcloud-vm.git /opt/nextcloud-vm"]
+    # 3. compose-level .env: ТОЛЬКО пароль админа Nextcloud (домен пустой => вычислится из IP).
+    #    DB/Redis/Collabora пароли firstboot генерирует сам на машине клиента
+    - ["curtin","in-target","--","bash","-c","umask 077 && printf 'NC_ADMIN_USER=admin\\nNC_ADMIN_PASSWORD=%s\\nNC_DOMAIN=\\n' '{admin_password}' > /opt/nextcloud-vm/.env"]
+    - ["curtin","in-target","--","chmod","0600","/opt/nextcloud-vm/.env"]
+    # 4. first-boot oneshot (поднимет docker на реальном boot)
+    - ["curtin","in-target","--","chmod","0755","/opt/nextcloud-vm/firstboot.sh"]
+    - ["curtin","in-target","--","cp","/opt/nextcloud-vm/nextcloud-firstboot.service","/etc/systemd/system/nextcloud-firstboot.service"]
+    - ["curtin","in-target","--","systemctl","enable","nextcloud-firstboot.service"]

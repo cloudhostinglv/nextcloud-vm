@@ -1,0 +1,27 @@
+# First-boot provisioning oneshot for the Nextcloud per-client VM.
+# Installed + enabled by the Ubuntu autoinstall (see autoinstall-snippet.yaml). Runs
+# firstboot.sh ONCE after docker + networking are up: generates the secrets the autoinstall
+# does not ship, derives NC_DOMAIN, brings the stack up, waits for Nextcloud to install
+# itself, turns the office on, then disables itself.
+#
+# Safe if it lingers enabled: firstboot.sh is idempotent and disables this unit at the end,
+# so a re-enable + reboot just re-converges.
+#
+# TimeoutStartSec: the default 90s is far too short. The first boot pulls ~2 GB of images and
+# waits for Nextcloud's own installer; on a cold cache that is minutes, and systemd would
+# kill it half-installed.
+
+[Unit]
+Description=Nextcloud VM first-boot provisioning (stack + TLS + office)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+ConditionPathExists=/opt/nextcloud-vm/firstboot.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=1800
+ExecStart=/opt/nextcloud-vm/firstboot.sh
+
+[Install]
+WantedBy=multi-user.target

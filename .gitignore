@@ -1,0 +1,4 @@
+# The real .env holds the admin password + the generated DB/Redis/Collabora secrets.
+.env
+# Runtime state, if anyone ever runs this repo in place.
+data/
