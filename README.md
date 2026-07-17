@@ -92,6 +92,34 @@ The first boot pulls ~2 GB and waits for Nextcloud's own installer, so it takes 
 seconds. That is why the unit sets `TimeoutStartSec=1800`; the systemd default of 90s would
 kill it half-installed.
 
+## Updates
+
+`nextcloud-update.timer` runs `updater/update.sh` nightly (03:00 + up to 6h of jitter, so the
+whole fleet does not hit GitHub in the same second). It converges the VM to whatever
+`origin/main` says. Because every image here is digest-pinned, that is never a blind chase of
+a moving registry tag: the VM moves only when we bump a pin and push.
+
+**Do not use Nextcloud's built-in web updater on this appliance.** The code lives in the
+image. The web updater would rewrite files inside a container that gets replaced on the next
+`up -d`, leaving a database migrated for a version the image no longer is.
+
+`update.sh` refuses two upgrades outright and keeps running the old version instead, because
+both are unrecoverable on a machine with no operator:
+
+| upgrade | why it is refused |
+|---|---|
+| Nextcloud skipping a major (33 → 35) | Nextcloud upgrades one major at a time. `occ upgrade` refuses the jump and the instance is stuck with a database it cannot migrate. Ship 34 first. |
+| any PostgreSQL major (18 → 19) | the official image does not run `pg_upgrade`. The container refuses to start against the old datadir, and the customer's files end up behind a database that will not open. Needs a deliberate dump/restore, never an auto-update. |
+
+A single-major Nextcloud step (33 → 34) is allowed: the image runs `occ upgrade` itself on
+start when it finds an older installed version.
+
+```bash
+systemctl start nextcloud-update      # run it now
+journalctl -u nextcloud-update        # what the last run did, including a refusal
+systemctl list-timers nextcloud-update
+```
+
 ## Sizing
 
 Collabora alone wants 2 GB of RAM and recommends 4. With Nextcloud, PostgreSQL, Redis and the

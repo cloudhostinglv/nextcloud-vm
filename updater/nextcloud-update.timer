@@ -1,0 +1,20 @@
+# Daily auto-update for the Nextcloud appliance.
+#
+# RandomizedDelaySec is not decoration: every VM we sell runs this same timer, so without a
+# spread they would all hit GitHub and Docker Hub within the same second every night. Six
+# hours of jitter turns a thundering herd into a trickle, and nobody is waiting on the exact
+# minute an unattended update lands.
+#
+# Persistent=yes so a VM that was powered off overnight still updates when it comes back,
+# instead of silently skipping every window it missed.
+
+[Unit]
+Description=Daily Nextcloud appliance update
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=6h
+Persistent=yes
+
+[Install]
+WantedBy=timers.target

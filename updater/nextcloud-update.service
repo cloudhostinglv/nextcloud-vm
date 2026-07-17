@@ -1,0 +1,18 @@
+# Runs the host-side updater. This unit, not any container, holds docker + git access.
+# Triggered by nextcloud-update.timer; safe to run by hand:  systemctl start nextcloud-update
+#
+# It converges the VM to whatever origin/main says. Images are digest-pinned there, so this
+# never chases a moving registry tag - it only moves when we bump a pin and push.
+
+[Unit]
+Description=Nextcloud appliance updater (git pull + docker compose pull/up)
+After=network-online.target docker.service
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+# Image pulls on a slow link plus an occ upgrade: the 90s default would cut it off midway.
+TimeoutStartSec=1800
+ExecStart=/opt/nextcloud-vm/updater/update.sh

@@ -140,7 +140,19 @@ occ config:system:set maintenance_window_start --type=integer --value=1
 occ db:add-missing-indices || true
 occ maintenance:repair --include-expensive || true
 
+# --- 6. Auto-updates ---------------------------------------------------------------------
+# Nobody operates this VM, and Nextcloud ships security fixes. The timer converges it to
+# whatever this repo says (images are digest-pinned there, so it never chases a moving tag).
+# update.sh refuses the two upgrades that cannot be undone: a skipped Nextcloud major and any
+# PostgreSQL major.
+log "Enabling daily auto-update"
+cp "${APP_DIR}/updater/nextcloud-update.service" /etc/systemd/system/
+cp "${APP_DIR}/updater/nextcloud-update.timer"   /etc/systemd/system/
+chmod 0755 "${APP_DIR}/updater/update.sh"
+systemctl daemon-reload
+systemctl enable --now nextcloud-update.timer
+
 log "Provisioning complete. Nextcloud: https://${NC_DOMAIN}  (admin user: ${NC_ADMIN_USER:-admin})"
 
-# --- 6. Disable this oneshot -------------------------------------------------------------
+# --- 7. Disable this oneshot -------------------------------------------------------------
 systemctl disable nextcloud-firstboot.service 2>/dev/null || true
